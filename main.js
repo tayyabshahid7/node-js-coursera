@@ -1,11 +1,16 @@
-const axios = require("axios");
-const fs = require("fs");
-const path = require("path");
-const crypto = require("crypto");
+const express = require('express');
+const axios = require('axios');
+const app = express();
+const PORT = process.env.PORT || 3000;
+const fs = require('fs');
+const crypto = require('crypto');
+const path = require('path');
 
-const usersFilePath = path.join(__dirname, "users.json");
+// Middleware to parse JSON bodies
+app.use(express.json());
 
-async function getAllBooks() {
+// GET endpoint to fetch JavaScript books
+app.get('/api/books/javascript', async (req, res) => {
     try {
         // Using Open Library API to search for books
         const response = await axios.get(
@@ -20,17 +25,56 @@ async function getAllBooks() {
             isbn: book.isbn ? book.isbn[0] : "Unknown",
         }));
 
-        console.log("Books about JavaScript:");
-        console.log(JSON.stringify(books, null, 2));
-        return books;
+        return res.status(200).json({
+            success: true,
+            data: books
+        });
     } catch (error) {
         console.error("Error fetching books:", error.message);
-        throw error;
+        return res.status(500).json({
+            success: false,
+            error: "Failed to fetch books"
+        });
     }
-}
+});
 
-async function getBookByISBN(isbn) {
+// Make the query parameter customizable
+app.get('/api/books', async (req, res) => {
     try {
+        const query = req.query.q || 'javascript';
+        const limit = req.query.limit || 10;
+
+        const response = await axios.get(
+            `https://openlibrary.org/search.json?q=${query}&limit=${limit}`
+        );
+
+        const books = response.data.docs.map((book) => ({
+            title: book.title,
+            author: book.author_name ? book.author_name.join(", ") : "Unknown",
+            first_publish_year: book.first_publish_year || "Unknown",
+            isbn: book.isbn ? book.isbn[0] : "Unknown",
+            reviews:{}
+        }));
+
+        return res.status(200).json({
+            success: true,
+            data: books
+        });
+    } catch (error) {
+        console.error("Error fetching books:", error.message);
+        return res.status(500).json({
+            success: false,
+            error: "Failed to fetch books"
+        });
+    }
+});
+
+
+// GET endpoint to fetch a book by ISBN
+app.get('/api/books/isbn/:isbn', async (req, res) => {
+    try {
+        const { isbn } = req.params;
+
         // Using Open Library API to get book by ISBN
         const response = await axios.get(
             `https://openlibrary.org/api/books?bibkeys=ISBN:${isbn}&format=json&jscmd=data`
@@ -41,8 +85,10 @@ async function getBookByISBN(isbn) {
         const bookData = response.data[key];
 
         if (!bookData) {
-            console.log(`No book found with ISBN: ${isbn}`);
-            return null;
+            return res.status(404).json({
+                success: false,
+                error: `No book found with ISBN: ${isbn}`
+            });
         }
 
         // Format the book data for a cleaner output
@@ -60,17 +106,25 @@ async function getBookByISBN(isbn) {
                 : [],
         };
 
-        console.log(`Book details for ISBN ${isbn}:`);
-        console.log(JSON.stringify(book, null, 2));
-        return book;
+        return res.status(200).json({
+            success: true,
+            data: book
+        });
     } catch (error) {
-        console.error(`Error fetching book with ISBN ${isbn}:`, error.message);
-        throw error;
+        console.error(`Error fetching book with ISBN ${req.params.isbn}:`, error.message);
+        return res.status(500).json({
+            success: false,
+            error: "Failed to fetch book details"
+        });
     }
-}
+});
 
-async function getBooksByAuthor(authorName) {
+
+// GET endpoint to fetch books by author
+app.get('/api/books/author/:authorName', async (req, res) => {
     try {
+        const { authorName } = req.params;
+
         // URL encode the author name for the API request
         const encodedAuthor = encodeURIComponent(authorName);
 
@@ -87,20 +141,27 @@ async function getBooksByAuthor(authorName) {
             language: book.language ? book.language[0] : "Unknown",
         }));
 
-        console.log(`Books by ${authorName}:`);
-        console.log(JSON.stringify(books, null, 2));
-        return books;
+        return res.status(200).json({
+            success: true,
+            data: books
+        });
     } catch (error) {
         console.error(
-            `Error fetching books by author ${authorName}:`,
+            `Error fetching books by author ${req.params.authorName}:`,
             error.message
         );
-        throw error;
+        return res.status(500).json({
+            success: false,
+            error: "Failed to fetch books by author"
+        });
     }
-}
+});
 
-async function getBooksByTitle(title) {
+// GET endpoint to fetch books by title
+app.get('/api/books/title/:title', async (req, res) => {
     try {
+        const { title } = req.params;
+
         // URL encode the title for the API request
         const encodedTitle = encodeURIComponent(title);
 
@@ -118,20 +179,26 @@ async function getBooksByTitle(title) {
             publisher: book.publisher ? book.publisher[0] : "Unknown",
         }));
 
-        console.log(`Books with title containing "${title}":`);
-        console.log(JSON.stringify(books, null, 2));
-        return books;
+        return res.status(200).json({
+            success: true,
+            data: books
+        });
     } catch (error) {
-        console.error(`Error fetching books with title "${title}":`, error.message);
-        throw error;
+        console.error(`Error fetching books with title "${req.params.title}":`, error.message);
+        return res.status(500).json({
+            success: false,
+            error: "Failed to fetch books by title"
+        });
     }
-}
+});
 
-async function getBookReviews(bookId) {
+
+// GET endpoint to fetch book reviews by book ID
+app.get('/api/books/reviews/:bookId', async (req, res) => {
     try {
-        // const response = await axios.get(`https://api.nytimes.com/svc/books/v3/reviews.json?isbn=${isbn}&api-key=YOUR_API_KEY`);
+        const { bookId } = req.params;
 
-        // Instead, we'll simulate a response using the Open Library API with work ID
+        // Using Open Library API to get book information by work ID
         const response = await axios.get(
             `https://openlibrary.org/works/${bookId}.json`
         );
@@ -164,19 +231,29 @@ async function getBookReviews(bookId) {
             reviews: simulatedReviews,
         };
 
-        console.log(`Reviews for book "${bookInfo.title}":`);
-        console.log(JSON.stringify(result, null, 2));
-        return result;
+        return res.status(200).json({
+            success: true,
+            data: result
+        });
     } catch (error) {
         console.error(
-            `Error fetching reviews for book ID ${bookId}:`,
+            `Error fetching reviews for book ID ${req.params.bookId}:`,
             error.message
         );
-        throw error;
+        return res.status(500).json({
+            success: false,
+            error: "Failed to fetch book reviews"
+        });
     }
-}
+});
 
-// File path for storing user data
+
+// Middleware to parse JSON bodies
+app.use(express.json());
+
+// Define path for users file
+const usersFilePath = './users.json';
+const reviewsFilePath = path.join(__dirname, "reviews.json");
 
 // Function to read existing users from file
 function readUsers() {
@@ -198,73 +275,6 @@ function writeUsers(users) {
         fs.writeFileSync(usersFilePath, JSON.stringify(users, null, 2), "utf8");
     } catch (error) {
         console.error("Error writing users file:", error.message);
-    }
-}
-
-// Using async/await to register a new user
-async function registerUser(userData) {
-    try {
-        // Validate user data
-        if (!userData.username || !userData.email || !userData.password) {
-            throw new Error("Username, email, and password are required");
-        }
-
-        // Read existing users
-        const users = readUsers();
-
-        // Check if username or email already exists
-        if (users.find((user) => user.username === userData.username)) {
-            throw new Error("Username already exists");
-        }
-
-        if (users.find((user) => user.email === userData.email)) {
-            throw new Error("Email already exists");
-        }
-
-        // Create new user object with ID and registration date
-        const newUser = {
-            id: users.length + 1,
-            username: userData.username,
-            email: userData.email,
-            password: userData.password, // In a real app, always hash passwords!
-            registeredAt: new Date().toISOString(),
-        };
-
-        // Add the new user to the array
-        users.push(newUser);
-
-        // Save the updated users array
-        writeUsers(users);
-
-        // Return the user object (without password) for display
-        const { password, ...userWithoutPassword } = newUser;
-
-        console.log("User registered successfully:");
-        console.log(JSON.stringify(userWithoutPassword, null, 2));
-        return userWithoutPassword;
-    } catch (error) {
-        console.error("Error registering user:", error.message);
-        throw error;
-    }
-}
-
-// Call the function with user data
-const newUser = {
-    username: "johnsmith",
-    email: "john.smith@example.com",
-    password: "securePassword123",
-};
-
-function readUsers() {
-    try {
-        if (fs.existsSync(usersFilePath)) {
-            const data = fs.readFileSync(usersFilePath, "utf8");
-            return JSON.parse(data);
-        }
-        return [];
-    } catch (error) {
-        console.error("Error reading users file:", error.message);
-        return [];
     }
 }
 
@@ -291,12 +301,79 @@ function generateToken(userId) {
     return `${headerBase64}.${payloadBase64}.${signature}`;
 }
 
-// Using async/await to login a user
-async function loginUser(credentials) {
+// POST endpoint to register a new user
+app.post('/api/auth/register', async (req, res) => {
     try {
+        const userData = req.body;
+
+        // Validate user data
+        if (!userData.username || !userData.email || !userData.password) {
+            return res.status(400).json({
+                success: false,
+                error: "Username, email, and password are required"
+            });
+        }
+
+        // Read existing users
+        const users = readUsers();
+
+        // Check if username or email already exists
+        if (users.find((user) => user.username === userData.username)) {
+            return res.status(409).json({
+                success: false,
+                error: "Username already exists"
+            });
+        }
+
+        if (users.find((user) => user.email === userData.email)) {
+            return res.status(409).json({
+                success: false,
+                error: "Email already exists"
+            });
+        }
+
+        // Create new user object with ID and registration date
+        const newUser = {
+            id: users.length + 1,
+            username: userData.username,
+            email: userData.email,
+            password: userData.password, // In a real app, always hash passwords!
+            registeredAt: new Date().toISOString(),
+        };
+
+        // Add the new user to the array
+        users.push(newUser);
+
+        // Save the updated users array
+        writeUsers(users);
+
+        // Return the user object (without password) for display
+        const { password, ...userWithoutPassword } = newUser;
+
+        return res.status(201).json({
+            success: true,
+            data: userWithoutPassword
+        });
+    } catch (error) {
+        console.error("Error registering user:", error.message);
+        return res.status(500).json({
+            success: false,
+            error: "Failed to register user"
+        });
+    }
+});
+
+// POST endpoint to login a user
+app.post('/api/auth/login', async (req, res) => {
+    try {
+        const credentials = req.body;
+
         // Validate credentials
         if (!credentials.email || !credentials.password) {
-            throw new Error("Email and password are required");
+            return res.status(400).json({
+                success: false,
+                error: "Email and password are required"
+            });
         }
 
         // Read users from file
@@ -307,7 +384,10 @@ async function loginUser(credentials) {
 
         // Check if user exists and password matches
         if (!user || user.password !== credentials.password) {
-            throw new Error("Invalid email or password");
+            return res.status(401).json({
+                success: false,
+                error: "Invalid email or password"
+            });
         }
 
         // Generate authentication token
@@ -322,22 +402,42 @@ async function loginUser(credentials) {
             expiresIn: "1 hour",
         };
 
-        console.log("User logged in successfully:");
-        console.log(JSON.stringify(loginResult, null, 2));
-        return loginResult;
+        return res.status(200).json({
+            success: true,
+            data: loginResult
+        });
     } catch (error) {
         console.error("Error logging in:", error.message);
-        throw error;
+        return res.status(500).json({
+            success: false,
+            error: "Failed to log in"
+        });
     }
-}
+});
 
-// Call the function with login credentials
-const credentials = {
-    email: "john.smith@example.com",
-    password: "securePassword123",
-};
+// GET endpoint to get all users (typically would require authentication)
+app.get('/api/users', (req, res) => {
+    try {
+        const users = readUsers();
+        // Remove passwords before sending
+        const usersWithoutPasswords = users.map(user => {
+            const { password, ...userWithoutPassword } = user;
+            return userWithoutPassword;
+        });
 
-const reviewsFilePath = path.join(__dirname, "reviews.json");
+        return res.status(200).json({
+            success: true,
+            data: usersWithoutPasswords
+        });
+    } catch (error) {
+        console.error("Error fetching users:", error.message);
+        return res.status(500).json({
+            success: false,
+            error: "Failed to fetch users"
+        });
+    }
+});
+
 
 // Function to read existing reviews from file
 function readReviews() {
@@ -396,30 +496,63 @@ function getUserById(userId) {
     }
 }
 
-// Using async/await to add or update a book review
-async function addOrUpdateReview(bookId, reviewData, token) {
+// Middleware to authenticate requests
+function authenticate(req, res, next) {
+    const authHeader = req.headers.authorization;
+
+    if (!authHeader || !authHeader.startsWith('Bearer ')) {
+        return res.status(401).json({
+            success: false,
+            error: "Unauthorized: No token provided"
+        });
+    }
+
+    const token = authHeader.split(' ')[1];
+    const userId = verifyToken(token);
+
+    if (!userId) {
+        return res.status(401).json({
+            success: false,
+            error: "Unauthorized: Invalid token"
+        });
+    }
+
+    // Add user ID to the request object
+    req.userId = userId;
+    next();
+}
+
+// POST endpoint to add or update a book review
+app.post('/api/books/:bookId/reviews', authenticate, async (req, res) => {
     try {
-        // Verify token and get user ID
-        const userId = verifyToken(token);
-        if (!userId) {
-            throw new Error("Unauthorized: Invalid token");
-        }
+        const { bookId } = req.params;
+        const reviewData = req.body;
+        const userId = req.userId;
 
         // Get user information
         const user = getUserById(userId);
         if (!user) {
-            throw new Error("User not found");
+            return res.status(404).json({
+                success: false,
+                error: "User not found"
+            });
         }
 
         // Validate review data
         if (!bookId || !reviewData.rating) {
-            throw new Error("Book ID and rating are required");
+            return res.status(400).json({
+                success: false,
+                error: "Book ID and rating are required"
+            });
         }
 
         // Validate rating
         const rating = Number(reviewData.rating);
         if (isNaN(rating) || rating < 1 || rating > 5) {
-            throw new Error("Rating must be a number between 1 and 5");
+            return res.status(400).json({
+                success: false,
+                error: "Rating must be a number between 1 and 5"
+            });
         }
 
         // Get book information (simulate with a request or use a cached version)
@@ -440,105 +573,50 @@ async function addOrUpdateReview(bookId, reviewData, token) {
         );
 
         const reviewObject = {
-            id:
-                existingReviewIndex >= 0 ? reviews[existingReviewIndex].id : Date.now(),
+            id: existingReviewIndex >= 0 ? reviews[existingReviewIndex].id : Date.now(),
             bookId: bookId,
             userId: userId,
             username: user.username,
             rating: rating,
             comment: reviewData.comment || "",
             bookTitle: bookInfo.title,
-            createdAt:
-                existingReviewIndex >= 0
-                    ? reviews[existingReviewIndex].createdAt
-                    : new Date().toISOString(),
+            createdAt: existingReviewIndex >= 0
+                ? reviews[existingReviewIndex].createdAt
+                : new Date().toISOString(),
             updatedAt: new Date().toISOString(),
         };
 
         // Update or add the review
         if (existingReviewIndex >= 0) {
             reviews[existingReviewIndex] = reviewObject;
-            console.log("Review updated successfully:");
+            console.log("Review updated successfully");
         } else {
             reviews.push(reviewObject);
-            console.log("Review added successfully:");
+            console.log("Review added successfully");
         }
 
         // Save reviews
         writeReviews(reviews);
 
-        console.log(JSON.stringify(reviewObject, null, 2));
-        return reviewObject;
+        return res.status(200).json({
+            success: true,
+            data: reviewObject,
+            message: existingReviewIndex >= 0 ? "Review updated successfully" : "Review added successfully"
+        });
     } catch (error) {
         console.error("Error adding/updating review:", error.message);
-        throw error;
+        return res.status(500).json({
+            success: false,
+            error: "Failed to add/update review"
+        });
     }
-}
+});
 
-// Call the function with review data and token
-// (Use the token from the login response in Task 7)
-const reviewData = {
-    rating: 4.5,
-    comment:
-        "This book was extremely helpful. I learned a lot of new techniques and concepts that I could apply immediately.",
-    bookTitle: "JavaScript: The Good Parts",
-};
-
-const token =
-    "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOjEsImlhdCI6MTY4MzAyNDkxMCwiZXhwIjoxNjgzMDI4NTEwfQ==.your-signature"; // Replace with your token from Task 7
-const bookId = "OL27258W"; // Open Library work ID for "JavaScript: The Good Parts"
-
-// Function to read existing reviews from file
-function readReviews() {
+// DELETE endpoint to delete a book review
+app.delete('/api/books/:bookId/reviews/:reviewId', authenticate, async (req, res) => {
     try {
-        if (fs.existsSync(reviewsFilePath)) {
-            const data = fs.readFileSync(reviewsFilePath, "utf8");
-            return JSON.parse(data);
-        }
-        return [];
-    } catch (error) {
-        console.error("Error reading reviews file:", error.message);
-        return [];
-    }
-}
-
-// Function to write reviews to file
-function writeReviews(reviews) {
-    try {
-        fs.writeFileSync(reviewsFilePath, JSON.stringify(reviews, null, 2), "utf8");
-    } catch (error) {
-        console.error("Error writing reviews file:", error.message);
-    }
-}
-
-// Function to verify token
-function verifyToken(token) {
-    try {
-        // In a real app, verify JWT signature and expiration
-        if (!token || typeof token !== "string") {
-            return null;
-        }
-
-        // Extract user ID from token (simplified)
-        const parts = token.split(".");
-        if (parts.length !== 3) return null;
-
-        const payload = JSON.parse(Buffer.from(parts[1], "base64").toString());
-        return payload.sub; // user ID
-    } catch (error) {
-        console.error("Error verifying token:", error.message);
-        return null;
-    }
-}
-
-// Using async/await to delete a book review
-async function deleteReview(bookId, reviewId, token) {
-    try {
-        // Verify token and get user ID
-        const userId = verifyToken(token);
-        if (!userId) {
-            throw new Error("Unauthorized: Invalid token");
-        }
+        const { bookId, reviewId } = req.params;
+        const userId = req.userId;
 
         // Read existing reviews
         const reviews = readReviews();
@@ -546,16 +624,23 @@ async function deleteReview(bookId, reviewId, token) {
         // Find the review
         const reviewIndex = reviews.findIndex(
             (review) =>
-                review.id.toString() === reviewId.toString() && review.bookId === bookId
+                review.id.toString() === reviewId.toString() &&
+                review.bookId === bookId
         );
 
         if (reviewIndex === -1) {
-            throw new Error("Review not found");
+            return res.status(404).json({
+                success: false,
+                error: "Review not found"
+            });
         }
 
         // Check if the review belongs to the authenticated user
         if (reviews[reviewIndex].userId !== userId) {
-            throw new Error("Unauthorized: You can only delete your own reviews");
+            return res.status(403).json({
+                success: false,
+                error: "Unauthorized: You can only delete your own reviews"
+            });
         }
 
         // Store the review that is about to be deleted for display
@@ -567,223 +652,89 @@ async function deleteReview(bookId, reviewId, token) {
         // Save the updated reviews
         writeReviews(reviews);
 
-        console.log("Review deleted successfully:");
-        console.log(
-            JSON.stringify(
-                {
-                    message: "Review deleted successfully",
-                    review: deletedReview,
-                },
-                null,
-                2
-            )
-        );
-
-        return { message: "Review deleted successfully", review: deletedReview };
+        return res.status(200).json({
+            success: true,
+            message: "Review deleted successfully",
+            data: deletedReview
+        });
     } catch (error) {
         console.error("Error deleting review:", error.message);
-        throw error;
-    }
-}
-
-const reviewId = 1745887407204; // Replace with the actual review ID from Task 8
-
-// Using traditional callbacks with async for fetching all books
-function getAllBooksWithCallback(callback) {
-    // Using Open Library API to search for books
-    axios
-        .get("https://openlibrary.org/search.json?q=javascript&limit=10")
-        .then((response) => {
-            // Process the response to get a cleaner format
-            const books = response.data.docs.map((book) => ({
-                title: book.title,
-                author: book.author_name ? book.author_name.join(", ") : "Unknown",
-                first_publish_year: book.first_publish_year || "Unknown",
-                isbn: book.isbn ? book.isbn[0] : "Unknown",
-            }));
-
-            // Call the callback with the results
-            callback(null, books);
-        })
-        .catch((error) => {
-            // Call the callback with the error
-            callback(error, null);
+        return res.status(500).json({
+            success: false,
+            error: "Failed to delete review"
         });
-}
+    }
+});
 
-function searchByISBN(isbn) {
-    return new Promise((resolve, reject) => {
-        // Using Open Library API to get book by ISBN
-        axios
-            .get(
-                `https://openlibrary.org/api/books?bibkeys=ISBN:${isbn}&format=json&jscmd=data`
-            )
-            .then((response) => {
-                // The response format is an object with ISBN:number as the key
-                const key = `ISBN:${isbn}`;
-                const bookData = response.data[key];
+// GET endpoint to get all reviews for a book
+app.get('/api/books/:bookId/reviews', async (req, res) => {
+    try {
+        const { bookId } = req.params;
 
-                if (!bookData) {
-                    reject(new Error(`No book found with ISBN: ${isbn}`));
-                    return;
-                }
+        // Read all reviews
+        const reviews = readReviews();
 
-                // Format the book data for a cleaner output
-                const book = {
-                    title: bookData.title,
-                    authors: bookData.authors
-                        ? bookData.authors.map((author) => author.name).join(", ")
-                        : "Unknown",
-                    publisher: bookData.publishers
-                        ? bookData.publishers[0].name
-                        : "Unknown",
-                    publish_date: bookData.publish_date || "Unknown",
-                    cover: bookData.cover ? bookData.cover.medium : "No cover available",
-                    number_of_pages: bookData.number_of_pages || "Unknown",
-                    subjects: bookData.subjects
-                        ? bookData.subjects.slice(0, 5).map((subject) => subject.name)
-                        : [],
-                };
+        // Filter reviews for the specific book
+        const bookReviews = reviews.filter(review => review.bookId === bookId);
 
-                resolve(book);
-            })
-            .catch((error) => {
-                reject(
-                    new Error(`Error fetching book with ISBN ${isbn}: ${error.message}`)
-                );
+        return res.status(200).json({
+            success: true,
+            data: bookReviews
+        });
+    } catch (error) {
+        console.error("Error fetching reviews:", error.message);
+        return res.status(500).json({
+            success: false,
+            error: "Failed to fetch reviews"
+        });
+    }
+});
+
+// DELETE endpoint to delete a specific user's review for a book
+app.delete('/api/books/:bookId/user-reviews', authenticate, async (req, res) => {
+    try {
+        const { bookId } = req.params;
+        const userId = req.userId;
+
+        // Read existing reviews
+        const reviews = readReviews();
+
+        // Find the review by bookId and userId
+        const reviewIndex = reviews.findIndex(
+            (review) => review.bookId === bookId && review.userId === userId
+        );
+
+        if (reviewIndex === -1) {
+            return res.status(404).json({
+                success: false,
+                error: "Review not found for this user and book"
             });
-    });
-}
-
-// Using async/await to search for books by author
-async function searchByAuthor(author) {
-    try {
-        // URL encode the author name for the API request
-        const encodedAuthor = encodeURIComponent(author);
-
-        // Using Open Library API to search for books by the author
-        const response = await axios.get(
-            `https://openlibrary.org/search.json?author=${encodedAuthor}&limit=10`
-        );
-
-        // Check if any books were found
-        if (response.data.docs.length === 0) {
-            console.log(`No books found for author: ${author}`);
-            return [];
         }
 
-        // Process the response to get a cleaner format
-        const books = response.data.docs.map((book) => ({
-            title: book.title,
-            first_publish_year: book.first_publish_year || "Unknown",
-            isbn: book.isbn ? book.isbn[0] : "Unknown",
-            language: book.language ? book.language[0] : "Unknown",
-            subject: book.subject ? book.subject.slice(0, 3) : [],
-        }));
+        // Store the review that is about to be deleted for display
+        const deletedReview = reviews[reviewIndex];
 
-        return books;
+        // Remove the review from the array
+        reviews.splice(reviewIndex, 1);
+
+        // Save the updated reviews
+        writeReviews(reviews);
+
+        return res.status(200).json({
+            success: true,
+            message: "Your review for this book has been deleted successfully",
+            data: deletedReview
+        });
     } catch (error) {
-        console.error(`Error searching books by author ${author}:`, error.message);
-        throw error;
+        console.error("Error deleting user review:", error.message);
+        return res.status(500).json({
+            success: false,
+            error: "Failed to delete your review"
+        });
     }
-}
+});
 
-// Using the async function
-async function main() {
-    try {
-        const author = "Martin Fowler"; // Example author
-        console.log(`Searching for books by author: ${author}...`);
-
-        const books = await searchByAuthor(author);
-
-        console.log(`Found ${books.length} books by ${author}:`);
-        console.log(JSON.stringify(books, null, 2));
-    } catch (error) {
-        console.error("Search failed:", error.message);
-    }
-}
-
-// Function to search for books by title using Promises with async/await
-async function searchByTitle(title) {
-    try {
-        // URL encode the title for the API request
-        const encodedTitle = encodeURIComponent(title);
-
-        // Using Open Library API to search for books by title
-        const response = await axios.get(
-            `https://openlibrary.org/search.json?title=${encodedTitle}&limit=10`
-        );
-
-        // Check if any books were found
-        if (response.data.docs.length === 0) {
-            console.log(`No books found with title containing: ${title}`);
-            return [];
-        }
-
-        // Process the response to get a cleaner format
-        const books = response.data.docs.map((book) => ({
-            title: book.title,
-            author: book.author_name ? book.author_name.join(", ") : "Unknown",
-            first_publish_year: book.first_publish_year || "Unknown",
-            isbn: book.isbn ? book.isbn[0] : "Unknown",
-            publisher: book.publisher ? book.publisher[0] : "Unknown",
-        }));
-
-        return books;
-    } catch (error) {
-        console.error(`Error searching books by title "${title}":`, error.message);
-        throw error;
-    }
-}
-
-// getAllBooks();
-// getBookByISBN("9781449331818");
-// getBooksByAuthor("Douglas Crockford");
-// getBooksByTitle("JavaScript");
-// getBookReviews("OL27258W");
-// registerUser(newUser);
-// loginUser(credentials);
-// addOrUpdateReview(bookId, reviewData, token);
-// deleteReview(bookId, reviewId, token);
-
-// // Calling the function with a callback
-// console.log("Fetching books with async callback...");
-// getAllBooksWithCallback((error, books) => {
-//   if (error) {
-//     console.error("Error fetching books:", error.message);
-//     return;
-//   }
-//
-//   console.log("Books fetched successfully using callback:");
-//   console.log(JSON.stringify(books, null, 2));
-// });
-
-// Call the function with a valid ISBN
-// console.log(`Searching for book with ISBN using Promises...`);
-// const isbn = "9781449331818"; // Example: "Learning JavaScript Design Patterns"
-//
-// searchByISBN(isbn)
-//   .then((book) => {
-//     console.log(`Book found with ISBN ${isbn}:`);
-//     console.log(JSON.stringify(book, null, 2));
-//   })
-//   .catch((error) => {
-//     console.error(error.message);
-//   });
-
-// main();
-
-// Using the function with Promise chaining
-console.log("Searching for books by title...");
-const searchTitle = "Design Patterns"; // Example title to search
-
-searchByTitle(searchTitle)
-    .then((books) => {
-        console.log(
-            `Found ${books.length} books with title containing "${searchTitle}":`
-        );
-        console.log(JSON.stringify(books, null, 2));
-    })
-    .catch((error) => {
-        console.error("Search failed:", error.message);
-    });
+// Start the server
+app.listen(PORT, () => {
+    console.log(`Server running on port ${PORT}`);
+});
